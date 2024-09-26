@@ -26,6 +26,7 @@ SCRIPT_VERSION="1.7"
 current_datetime=$(date +"%d.%m.%Y-%H:%M")
 device_avilable_storage=$(df -h | grep '/storage/emulated' | awk '{print $4}' | tr -d '[:alpha:]')
 
+DESTRO_NAME="BackTrack"
 
 device_total_ram=$(free -b | awk 'NR==2 {print $2}')
 device_total_ram_gb=$(echo "scale=2; $device_total_ram / (1024 * 1024 * 1024)" | bc)
@@ -198,7 +199,7 @@ get_build_ID() {
         exit 1
     fi
 
-    nh_rootfs="$PREFIX/var/lib/proot-distro/installed-rootfs/BackTrack-$BUILD_ID"
+    nh_rootfs="$PREFIX/var/lib/proot-distro/installed-rootfs/${DESTRO_NAME}"
 
 }
 
@@ -280,19 +281,26 @@ upgrade_termux() {
     apt install -y proot-distro curl
 }
 
-# Retrieve SHA256 checksum for the selected Nethunter image
+# Retrieve SHA512 checksum for the selected Nethunter image
 get_sha256_checksum() {
-    print_task_V1_7 "Retrieving SHA256 checksum"
+    print_task_V1_7 "Retrieving SHA512 checksum"
     base_url="https://kali.download/nethunter-images/current/rootfs"
-    sha256_url="$base_url/SHA256SUMS"
-    rootfs="kalifs-$SYS_ARCH-minimal.tar.xz"
-    
-    SHA256=$(curl -s "$sha256_url" | grep "$rootfs" | awk '{print $1}')
+    rootfs="kali-nethunter-rootfs-minimal-$SYS_ARCH.tar.xz"
+    sha512_url="$base_url/${rootfs}.sha512sum"
 
-    if [[ -z "$SHA256" ]]; then
-        print_error "Failed to retrieve SHA256 checksum. Exiting."
+    SHA512=$(curl -s "$sha512_url" | grep "$rootfs" | awk '{print $1}')
+
+    if [[ -z "$SHA512" ]]; then
+        print_error "Failed to retrieve SHA512 checksum. Exiting."
         exit 1
     fi
+
+    print_done "SHA512SUM: $SHA512"
+
+    proot_cache_path="/data/data/com.termux/files/home/proot-distro/dlcache"
+    mkdir -p $proot_cache_path
+    curl "$base_url/$rootfs" -o "$proot_cache_path/$rootfs" -C -
+    SHA256=$(sha256sum "$proot_cache_path/$rootfs" | grep "kali-nethunter-rootfs-minimal-arm64.tar.xz" | awk '{print $1}')
 
     print_done "SHA256SUM: $SHA256"
 }
@@ -305,8 +313,9 @@ DISTRO_NAME=\"kali Nethunter $BUILD_ID ($SYS_ARCH)\"
 DISTRO_COMMENT=\"Kali nethunter $SYS_ARCH (ID: $BUILD_ID)\"
 TARBALL_URL['aarch64']=\"$base_url/$rootfs\"
 TARBALL_SHA256['aarch64']=\"$SHA256\""
+#TARBALL_SHA512['aarch64']=\"$SHA512\""
 
-    printf "$distro_file" > "$PREFIX/etc/proot-distro/BackTrack-$BUILD_ID.sh"
+    printf "$distro_file" > "$PREFIX/etc/proot-distro/${DESTRO_NAME}.sh"
     if [ $? -eq 0 ]; then
     print_done "Successfully generated config file"
     fi
@@ -318,7 +327,7 @@ install_nethunter() {
     upgrade_termux
     get_sha256_checksum
     generate_config_file
-    proot-distro install BackTrack-$BUILD_ID
+    proot-distro install ${DESTRO_NAME}
 }
 
 # Login Shortcut
@@ -340,7 +349,7 @@ setup_nethunter(){
     
     # Fixed apt upgrade stuck by 'mv /usr/sbin/telinit /usr/sbin/telinit.bak2 && ln -s /usr/bin/true /usr/sbin/telinit' before upgrade the nethunter
     # discussions by tj64 : https://github.com/microsoft/WSL/discussions/11097#discussioncomment-8356353
-    proot-distro login BackTrack-$BUILD_ID -- bash -c 'apt update
+    proot-distro login ${DESTRO_NAME} -- bash -c 'apt update
     mv /usr/sbin/telinit /usr/sbin/telinit.bak2
     ln -s /usr/bin/true /usr/sbin/telinit
     apt full-upgrade -y
@@ -355,12 +364,12 @@ setup_nethunter(){
 # Update default password
 update_passwd(){
     print_task_V1_7 "Updating password (root)"
-    proot-distro login BackTrack-$BUILD_ID -- passwd
+    proot-distro login ${DESTRO_NAME} -- passwd
     if [ $? -eq 0 ]; then
     print_done "Updated password for user root"
     fi
     print_task_V1_7 "Updating password (kali)"
-    proot-distro login BackTrack-$BUILD_ID -- passwd kali
+    proot-distro login ${DESTRO_NAME} -- passwd kali
     if [ $? -eq 0 ]; then
     print_done "Updated password for user kali"
     fi
@@ -388,8 +397,8 @@ setup_zsh(){
             ;;
     esac
     
-    proot-distro login BackTrack-$BUILD_ID -- bash -c 'apt install -y zsh-syntax-highlighting zsh-autosuggestions command-not-found'
-    proot-distro login BackTrack-$BUILD_ID -- bash -c 'apt update'
+    proot-distro login ${DESTRO_NAME} -- bash -c 'apt install -y zsh-syntax-highlighting zsh-autosuggestions command-not-found'
+    proot-distro login ${DESTRO_NAME} -- bash -c 'apt update'
     if [ $? -eq 0 ]; then
     print_done "zsh setup is complete"
     fi
@@ -406,9 +415,9 @@ gui_setup() {
     # Fix ㉿ symbol encoding issue on terminal
     cp "./themes/nethunter/NishikiTeki-font.ttf" "$nh_rootfs/usr/share/fonts/"
 
-    proot-distro login BackTrack-$BUILD_ID -- bash -c 'chmod +x ~/.vnc/xstartup
+    proot-distro login ${DESTRO_NAME} -- bash -c 'chmod +x ~/.vnc/xstartup
     chmod +x /usr/bin/kgui'
-    proot-distro login BackTrack-$BUILD_ID --user kali -- bash -c 'chmod +x ~/.vnc/xstartup'
+    proot-distro login ${DESTRO_NAME} --user kali -- bash -c 'chmod +x ~/.vnc/xstartup'
     if [ $? -eq 0 ]; then
     print_done "GUI setup is complete"
     fi
@@ -416,7 +425,7 @@ gui_setup() {
 
 change_default_shell() {
     print_task_V1_7 "Changing default shell to zsh"
-    proot-distro login BackTrack-$BUILD_ID -- bash -c 'usermod -s /usr/bin/zsh root
+    proot-distro login ${DESTRO_NAME} -- bash -c 'usermod -s /usr/bin/zsh root
     usermod -s /usr/bin/zsh kali'
     if [ $? -eq 0 ]; then
     print_done "Successfully changed default shell to zsh"
@@ -433,85 +442,85 @@ BUILD_NEW_NH() {
             # xfce top10
             local tools='Top 10'
             print_task_V1_7 "Building kali $tools"
-            proot-distro login BackTrack-$BUILD_ID -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-tools-top10
+            proot-distro login ${DESTRO_NAME} -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-tools-top10
             ;;
         KBDEXKMTD)
             # xfce default
             local tools='Default'
             print_task_V1_7 "Building kali $tools"
-            proot-distro login BackTrack-$BUILD_ID -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-linux-default
+            proot-distro login ${DESTRO_NAME} -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-linux-default
             ;;
         KBDEXKMTL)
             # xfce large
             local tools='Large'
             print_task_V1_7 "Building kali $tools"
-            proot-distro login BackTrack-$BUILD_ID -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-linux-large
+            proot-distro login ${DESTRO_NAME} -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-linux-large
             ;;
         KBDEXKMTE)
             # xfce everything
             local tools='Everything'
             print_task_V1_7 "Building kali $tools"
-            proot-distro login BackTrack-$BUILD_ID -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-linux-everything
+            proot-distro login ${DESTRO_NAME} -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-linux-everything
             ;;
         KBCTDEX)
             #Custom Tools Build
             local tools='Custom build'
             print_task_V1_7 "Building kali with custom tools"
-            proot-distro login BackTrack-$BUILD_ID -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 tigervnc-standalone-server kali-defaults kali-themes kali-menu firefox-esr steghide sqlmap autopsy wireshark yara wfuzz enum4linux nmap ncat cewl john wordlists hydra ghidra jd-gui burpsuite nikto dirb wpscan python3 python3-pip socat gobuster villain
+            proot-distro login ${DESTRO_NAME} -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 tigervnc-standalone-server kali-defaults kali-themes kali-menu firefox-esr steghide sqlmap autopsy wireshark yara wfuzz enum4linux nmap ncat cewl john wordlists hydra ghidra jd-gui burpsuite nikto dirb wpscan python3 python3-pip socat gobuster villain
             ;;
         KBCIGDEX)
             #Information gathering
             local tools='Information gathering'
             print_task_V1_7 "Building kali $tools"
-            proot-distro login BackTrack-$BUILD_ID -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-tools-information-gathering
+            proot-distro login ${DESTRO_NAME} -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-tools-information-gathering
             ;;
         KBCWGDEX)
             # kali web
             local tools='Web'
             print_task_V1_7 "Building kali $tools"
-            proot-distro login BackTrack-$BUILD_ID -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-tools-web
+            proot-distro login ${DESTRO_NAME} -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-tools-web
             ;;
         KBCCSGDEX)
             #Crypto and Stego
             local tools='Crypto & Stego'
             print_task_V1_7 "Building kali $tools"
-            proot-distro login BackTrack-$BUILD_ID -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-tools-crypto-stego
+            proot-distro login ${DESTRO_NAME} -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-tools-crypto-stego
             ;;
         KBCPGDEX)
             #Passwords
             local tools='Password enumeration'
             print_task_V1_7 "Building kali $tools"
-            proot-distro login BackTrack-$BUILD_ID -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-tools-passwords
+            proot-distro login ${DESTRO_NAME} -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-tools-passwords
             ;;
         KBCFOGDEX)
             #Forensics
             local tools='Forensics'
             print_task_V1_7 "Building kali $tools"
-            proot-distro login BackTrack-$BUILD_ID -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-tools-forensics
+            proot-distro login ${DESTRO_NAME} -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-tools-forensics
             ;;
         KBCFUGDEX)
             #Fuzzing
             local tools='Fuzzing'
             print_task_V1_7 "Building kali $tools"
-            proot-distro login BackTrack-$BUILD_ID -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-tools-fuzzing
+            proot-distro login ${DESTRO_NAME} -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-tools-fuzzing
             ;;
         KBCREGDEX)
             #Reverse engineering
             local tools='Reverse engineering'
             print_task_V1_7 "Building kali $tools"
-            proot-distro login BackTrack-$BUILD_ID -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-tools-reverse-engineering
+            proot-distro login ${DESTRO_NAME} -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-tools-reverse-engineering
             ;;
         KBCSSGDEX)
             #Sniffing and Spoofing
             local tools='Sniffing & Spoofing'
             print_task_V1_7 "Building kali $tools"
-            proot-distro login BackTrack-$BUILD_ID -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-tools-sniffing-spoofing
+            proot-distro login ${DESTRO_NAME} -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-tools-sniffing-spoofing
             ;;
         KBCEGDEX)
             # Exploit
             local tools='Exploitation'
             print_task_V1_7 "Building kali $tools"
-            proot-distro login BackTrack-$BUILD_ID -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-tools-exploitation
+            proot-distro login ${DESTRO_NAME} -- apt install -y kali-linux-core xfce4 xfce4-goodies xfce4-terminal kali-desktop-xfce xfce4-whiskermenu-plugin dbus-x11 kali-defaults kali-themes kali-menu firefox-esr tigervnc-standalone-server kali-tools-exploitation
             ;;
         *)
             print_error "Invalid build ID"
